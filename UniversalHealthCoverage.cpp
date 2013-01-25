@@ -38,7 +38,7 @@ static Vector< Set<string> > inputLocations();
 static int inputNumHospitals();
 
 int main() {
-  Set<string> cities = inputCities();
+	Set<string> cities = inputCities();
     Vector< Set<string> > locations = inputLocations();
     int numHospitals = inputNumHospitals();
 	Vector< Set<string> > result;
@@ -75,19 +75,18 @@ static Set<string> inputCities() {
 }
 
 static Vector< Set<string> > inputLocations(){
-    cout << "Please enter the names of all the cities each hospital will provide coverage for" << endl;
     Vector< Set<string> > locations;
     Set<string> hospitalData1;
-    hospitalData1.add("london");
+    hospitalData1.add("coventry");
     hospitalData1.add("manchester");
     hospitalData1.add("birmingham");
     hospitalData1.add("leeds");
     cout << endl;
     Set<string> hospitalData2;
     hospitalData2.add("london");
-    hospitalData2.add("manchester");
+    hospitalData2.add("coventry");
     hospitalData2.add("birmingham");
-    hospitalData2.add("liverpool");
+    hospitalData2.add("leicester");
     cout << endl;
     Set<string> hospitalData3;
     hospitalData3.add("phuket");
