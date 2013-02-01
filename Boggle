@@ -1,0 +1,521 @@
+/*
+ * File: Boggle.cpp
+ * ----------------
+ */
+ 
+#include <iostream>
+#include "gboggle.h"
+#include "graphics.h"
+#include "grid.h"
+#include "vector.h"
+#include "lexicon.h"
+#include "random.h"
+#include "simpio.h"
+using namespace std;
+
+/* Constants */
+
+const int BOGGLE_WINDOW_WIDTH = 650;
+const int BOGGLE_WINDOW_HEIGHT = 350;
+
+const string STANDARD_CUBES[16]  = {
+   "AAEEGN", "ABBJOO", "ACHOPS", "AFFKPS",
+   "AOOTTW", "CIMOTU", "DEILRX", "DELRVY",
+   "DISTTY", "EEGHNW", "EEINSU", "EHRTVW",
+   "EIOSST", "ELRTTY", "HIMNQU", "HLNNRZ"
+};
+ 
+const string BIG_BOGGLE_CUBES[25]  = {
+   "AAAFRS", "AAEEEE", "AAFIRS", "ADENNN", "AEEEEM",
+   "AEEGMU", "AEGMNN", "AFIRSY", "BJKQXZ", "CCNSTW",
+   "CEIILT", "CEILPT", "CEIPST", "DDLNOR", "DDHNOT",
+   "DHHLOR", "DHLNOR", "EIIITT", "EMOTTT", "ENSSSU",
+   "FIPRSY", "GORRVW", "HIPRRY", "NOOTUW", "OOOTTU"
+};
+
+/* Function prototypes */
+
+void welcome();
+void giveInstructions();
+static void playGame();
+// Create random board
+static Grid <char> randomBoard();
+// Create custom board
+static Grid<char> customBoard();
+static void drawAndFillBoard(Grid<char>);
+static int humansTurn(Lexicon englishWords, Lexicon &previousWords, Grid<char>);
+static bool humanGuessIsValid (Grid<char> board, Grid<bool> blockUsed, string guess, int i, int j, int originalLength);
+static void highlight(Grid<bool> blockUsed);
+static void computersTurn(Lexicon englishWords, Lexicon &previousWords, Lexicon &computersSolns, Grid<char> board, Grid<bool> blockUsed, string s);
+static void computersRecursion(Lexicon englishWords, Lexicon &previousWords, Lexicon &computersSolns, Grid<char> board, Grid<bool> blockUsed, string s, int i, int j);
+
+int main() {
+    initGraphics(BOGGLE_WINDOW_WIDTH, BOGGLE_WINDOW_HEIGHT);
+    welcome();
+    giveInstructions();
+    playGame();
+    return 0;
+}
+
+void welcome() {
+    /*
+     * Function: welcome
+     * Usage: welcome();
+     * -----------------
+     * Print out a cheery welcome message.
+     */
+   cout << "Welcome!  You're about to play an intense game ";
+   cout << "of mind-numbing Boggle.  The good news is that ";
+   cout << "you might improve your vocabulary a bit.  The ";
+   cout << "bad news is that you're probably going to lose ";
+   cout << "miserably to this little dictionary-toting hunk ";
+   cout << "of silicon.  If only YOU had a gig of RAM..." << endl << endl;
+}
+
+void giveInstructions() {
+    /*
+     * Function: giveInstructions
+     * Usage: giveInstructions();
+     * --------------------------
+     * Print out the instructions for the user.
+     */
+   cout << endl;
+   cout << "The boggle board is a grid onto which I ";
+   cout << "I will randomly distribute cubes. These ";
+   cout << "6-sided cubes have letters rather than ";
+   cout << "numbers on the faces, creating a grid of ";
+   cout << "letters on which you try to form words. ";
+   cout << "You go first, entering all the words you can ";
+   cout << "find that are formed by tracing adjoining ";
+   cout << "letters. Two letters adjoin if they are next ";
+   cout << "to each other horizontally, vertically, or ";
+   cout << "diagonally. A letter can only be used once ";
+   cout << "in each word. Words must be at least four ";
+   cout << "letters long and can be counted only once. ";
+   cout << "You score points based on word length: a ";
+   cout << "4-letter word is worth 1 point, 5-letters ";
+   cout << "earn 2 points, and so on. After your puny ";
+   cout << "brain is exhausted, I, the supercomputer, ";
+   cout << "will find all the remaining words and double ";
+   cout << "or triple your paltry score." << endl << endl;
+   cout << "Hit return when you're ready...";
+   getLine();
+}
+
+static void playGame(){
+    initGraphics(BOGGLE_WINDOW_WIDTH, BOGGLE_WINDOW_HEIGHT);
+    string custom = getLine("Type y to create custom board:" );
+    Grid<char> gridData;
+    if (custom=="y"){
+        gridData = customBoard();
+    } else {
+        gridData = randomBoard();
+    }
+    drawAndFillBoard(gridData);
+    Lexicon english("EnglishWords.dat");
+    // Lexicon holds words previously encountered
+    Lexicon previousWords;
+    humansTurn(english, previousWords,gridData);
+    Lexicon computersSolns;
+    string s;
+    Grid<bool> blockUsed(4,4);
+    computersTurn(english, previousWords, computersSolns, gridData,blockUsed, s);
+}
+
+static Grid<char> randomBoard(){
+    Vector<string> standardCubes;
+    for(int i = 0; i<16;i++){
+        standardCubes.add(STANDARD_CUBES[i]);
+    }
+    // Shuffle cubes
+    for (int i = 0; i < standardCubes.size(); i++) {
+        int r = randomInteger(i, standardCubes.size()-1);
+        if (i!=r){
+            string stringToMove1 = standardCubes.get(i);
+            string stringToMove2 = standardCubes.get(r);
+            standardCubes.set(r, stringToMove1);
+            standardCubes.set(i, stringToMove2);
+        }
+    }
+    // Update grid with random side of cube
+    Grid<char> gridData(4, 4);
+    int counter = 0;
+    for (int columnNo = 0; columnNo <4; columnNo++){
+        for (int rowNo = 0; rowNo<4; rowNo++) {
+            string s = standardCubes.get(counter);
+            int r = randomInteger(0, 5);
+            gridData[columnNo][rowNo] = s[r];
+            counter++;
+        }
+    }
+    return gridData;
+}
+
+static Grid<char> customBoard(){
+    Grid<char> gridData(4,4);
+    string s = getLine("Please enter 16 characters to make up the custom board. Characters will fill the board left to right, top to bottom: ");
+    for (int i = 0; i < s.length(); i++) {
+        s[i] = toupper(s[i]);
+    }
+    if (s.length()<16){
+        cout << "String has to be 16 characters long, try again" << endl;
+        customBoard();
+    }
+    int i =0;
+    for (int columnNo = 0; columnNo <4; columnNo++){
+        for (int rowNo = 0; rowNo<4; rowNo++) {
+            gridData[columnNo][rowNo] = s[i];
+            i++;
+        }
+    }
+    
+    return gridData;
+}
+
+static void drawAndFillBoard(Grid<char> gridData){
+    drawBoard(4, 4);
+    for (int columnNo = 0; columnNo <4; columnNo++){
+        for (int rowNo = 0; rowNo<4; rowNo++) {
+            labelCube(rowNo, columnNo, gridData[rowNo][columnNo]);
+        }
+    }
+}
+
+static int humansTurn(Lexicon englishWords, Lexicon &previousWords, Grid<char> board){
+    /*
+     Human’s turn (except for finding words on the board). Write the loop that allows the user to enter words. Reject words that have already been entered or that don’t meet the minimum word length or that aren’t in the lexicon. Use the gboggle functions to add words to the graphical display and keep score.
+     */
+    string humanGuess = getLine("Please enter your guess: ");
+    if(humanGuess==""){
+        return 0;
+    }
+    for (int i = 0; i < humanGuess.length(); i++) {
+        humanGuess[i] = toupper(humanGuess[i]);
+    }
+    if (humanGuess.length()<4){
+        cout << "Min guess length is four characters" << endl;
+        humanGuess="";
+        humansTurn(englishWords, previousWords, board);
+    }
+    if (!englishWords.contains(humanGuess)) {
+        cout << "That word is not English, please try another word" << endl;
+        humanGuess="";
+        humansTurn(englishWords, previousWords, board);
+    }
+    if (previousWords.contains(humanGuess)){
+        cout << "That word has already been guessed, please try another word" << endl;
+        humanGuess="";
+        humansTurn(englishWords, previousWords, board);
+    }
+    // check if word can be made using data on board
+    Grid<bool> blockUsed (4,4);
+    for (int columnNo = 0; columnNo <4; columnNo++){
+        for (int rowNo = 0; rowNo<4; rowNo++) {
+            blockUsed[columnNo][rowNo]=false;
+        }
+    }
+    if (humanGuessIsValid (board,blockUsed, humanGuess,0, 0, humanGuess.length())==true){
+        previousWords.add(humanGuess);
+        recordWordForPlayer(humanGuess, HUMAN);
+    }   else {
+        cout << "You can't make that word!!" << endl;
+    }
+    humansTurn( englishWords, previousWords, board);
+    return 0;
+}
+
+static bool humanGuessIsValid (Grid<char> board, Grid<bool> blockUsed, string guess, int i, int j, int originalLength){
+    // BASE CASE 1: LOOK FOR FIRST CHARACTER
+    if (guess.length()==originalLength){
+        for (int columnNo = 0; columnNo <4; columnNo++){
+            for (int rowNo = 0; rowNo<4; rowNo++) {
+                if(guess[0]==board[columnNo][rowNo]){
+                    blockUsed[columnNo][rowNo]=true;
+                    if(humanGuessIsValid(board, blockUsed, guess.substr(1), columnNo, rowNo, originalLength)==true){
+                        return true;
+                    }
+                    // make all of blockUsed false
+                    for (int columnNo = 0; columnNo <4; columnNo++){
+                        for (int rowNo = 0; rowNo<4; rowNo++) {
+                            blockUsed[columnNo][rowNo]=false;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    
+    // BASE CASE 2: GUESS LENGTH = 1
+    if (guess.length()==1){
+        if (board.inBounds(i-1, j-1) && board[i-1][j-1]==guess[0] && blockUsed[i-1][j-1]==false){
+            blockUsed[i-1][j-1]=true;
+            highlight(blockUsed);
+            return true;
+        }
+        if (board.inBounds(i-1, j) && board[i-1][j]==guess[0] && blockUsed[i-1][j]==false){
+            blockUsed[i-1][j]=true;
+            highlight(blockUsed);
+            return true;
+        }
+
+        if (board.inBounds(i-1, j+1) && board[i-1][j+1]==guess[0] && blockUsed[i-1][j+1]==false){
+            blockUsed[i-1][j+1]=true;
+            highlight(blockUsed);
+            return true;
+        }
+
+        if (board.inBounds(i, j-1) && board[i][j-1]==guess[0] && blockUsed[i][j-1]==false){
+            blockUsed[i-1][j-1]=true;
+            highlight(blockUsed);
+            return true;
+        }
+
+        if (board.inBounds(i, j+1) && board[i][j+1]==guess[0] && blockUsed[i][j+1]==false){
+            blockUsed[i][j+1]=true;
+            highlight(blockUsed);
+            return true;
+        }
+
+        if (board.inBounds(i+1, j-1) && board[i+1][j-1]==guess[0] && blockUsed[i+1][j-1]==false){
+            blockUsed[i+1][j-1]=true;
+            highlight(blockUsed);
+            return true;
+        }
+
+        if (board.inBounds(i+1, j) && board[i+1][j]==guess[0] && blockUsed[i+1][j]==false){
+            blockUsed[i+1][j]=true;
+            highlight(blockUsed);
+            return true;
+        }
+
+        if (board.inBounds(i+1, j+1) && board[i+1][j+1]==guess[0] && blockUsed[i+1][j+1]==false){
+            blockUsed[i+1][j+1]=true;
+            highlight(blockUsed);
+            return true;
+        }
+    }
+    
+    // RECURSIVE CASE
+    // if board is in bounds, and equals the first letter of substring guess and block hasn't been used, update
+    // blockUsed grid and recursive step
+        if (board.inBounds(i-1, j-1) && board[i-1][j-1]==guess[0] && blockUsed[i-1][j-1]==false){
+            blockUsed[i-1][j-1]=true;
+            if(humanGuessIsValid(board, blockUsed, guess.substr(1), i-1, j-1, originalLength)==true){
+                return true;
+            }
+            blockUsed[i-1][j-1]=false;
+        }
+        if (board.inBounds(i-1, j) && board[i-1][j]==guess[0] && blockUsed[i-1][j]!=1){
+            blockUsed[i-1][j]=true;
+            if( humanGuessIsValid(board, blockUsed, guess.substr(1), i-1, j, originalLength)==true){
+                return true;
+            }
+            blockUsed[i-1][j]= false;
+        }
+        if (board.inBounds(i-1, j+1) && board[i-1][j+1]==guess[0] && blockUsed[i-1][j+1]==false){
+            blockUsed[i-1][j+1]=true;
+            if( humanGuessIsValid(board, blockUsed, guess.substr(1), i-1, j+1, originalLength)==true){
+                return true;
+            }
+            blockUsed[i-1][j+1]=false;
+        }
+        if (board.inBounds(i, j-1) && board[i][j-1]==guess[0] && blockUsed[i][j-1]==false){
+            blockUsed[i][j-1]=true;
+            if( humanGuessIsValid(board, blockUsed, guess.substr(1), i, j-1, originalLength)==true){
+                return true;
+            }
+            blockUsed[i][j-1]=false;
+        }
+        if (board.inBounds(i, j+1) && board[i][j+1]==guess[0] && blockUsed[i][j+1]==false){
+            blockUsed[i][j+1]=true;
+            if( humanGuessIsValid(board, blockUsed, guess.substr(1), i, j+1, originalLength)==true){
+                return true;
+            }
+            blockUsed[i][j+1]=false;
+        }
+        if (board.inBounds(i+1, j-1) && board[i+1][j-1]==guess[0] && blockUsed[i+1][j-1]==false){
+            blockUsed[i+1][j-1]=true;
+            if( humanGuessIsValid(board, blockUsed, guess.substr(1), i+1, j-1, originalLength)==true){
+                return true;
+            }
+            blockUsed[i+1][j-1]=false;
+        }
+        if (board.inBounds(i+1, j) && board[i+1][j]==guess[0] && blockUsed[i+1][j]==false){
+            blockUsed[i+1][j]=true;
+            if( humanGuessIsValid(board, blockUsed, guess.substr(1), i+1, j, originalLength) == true){
+                return true;
+            }
+            blockUsed[i+1][j]=false;
+        }
+        if (board.inBounds(i+1, j+1) && board[i+1][j+1]==guess[0] && blockUsed[i+1][j+1]==false){
+            blockUsed[i+1][j+1]=true;
+            if( humanGuessIsValid(board, blockUsed, guess.substr(1), i+1, j+1, originalLength) == true){
+                return true;
+            }
+            blockUsed[i+1][j+1]=false;
+        }
+    return false;
+}
+
+static void highlight(Grid<bool> blockUsed) {
+// highlight and then unhighlight blocks for 50 ms
+    
+    for (int columnNo = 0; columnNo <4; columnNo++){
+        for (int rowNo = 0; rowNo<4; rowNo++) {
+            if(blockUsed[columnNo][rowNo]==true){
+                highlightCube(columnNo, rowNo, true);
+            }
+        }
+    }
+    pause(50);
+    for (int columnNo = 0; columnNo <4; columnNo++){
+        for (int rowNo = 0; rowNo<4; rowNo++) {
+            highlightCube(columnNo, rowNo, false);
+        }
+    }
+    
+}
+
+static void computersTurn(Lexicon englishWords, Lexicon &previousWords, Lexicon &computersSolns, Grid<char> board, Grid<bool> blockUsed, string s) {
+    for (int i = 0; i <4; i++){
+        for (int j = 0; j<4; j++) {
+            // empty string and clean blockUsed grid
+            string s = "";
+            s+=board[i][j];
+            for (int columnNo = 0; columnNo <4; columnNo++){
+                for (int rowNo = 0; rowNo<4; rowNo++) {
+                    blockUsed[columnNo][rowNo]=false;
+                }
+            }
+            blockUsed[i][j]=true;
+            computersRecursion(englishWords, previousWords, computersSolns, board, blockUsed, s, i, j);
+        }
+    }
+    string playAgain = getLine("Do you want to play again? Type y if you do: ");
+    if (playAgain=="y"){
+        playGame
+        ();
+    }
+}
+
+static void computersRecursion(Lexicon englishWords, Lexicon &previousWords, Lexicon &computersSolns, Grid<char> board, Grid<bool> blockUsed, string s, int i, int j) {
+    // ensure blocks surrounding are in bounds and haven't been used before
+    if (board.inBounds(i-1, j-1) && blockUsed[i-1][j-1]==false){
+        // append character on board
+        s += board[i-1][j-1];
+        // update blockUsed grid
+        blockUsed[i-1][j-1]=true;
+        // if length > min, hasn't been used by comp or human before and is in english lexicon, add to comp solns
+        if (s.length()>=4 && !previousWords.contains(s)&& !computersSolns.contains(s)&&englishWords.contains(s)){
+            computersSolns.add(s);
+            recordWordForPlayer(s, COMPUTER);
+        }
+        // recursive section
+        if (englishWords.containsPrefix(s)==true){
+            computersRecursion(englishWords, previousWords, computersSolns, board, blockUsed, s, i-1, j-1);
+        }
+        // update blockused grid
+        blockUsed[i-1][j-1]=false;
+        // update string
+        s = s.substr(0,s.length()-1);
+    }
+    
+    if (board.inBounds(i-1, j) && blockUsed[i-1][j]==false){
+        s += board[i-1][j];
+        blockUsed[i-1][j]=true;
+        if (s.length()>=4 && !previousWords.contains(s)&& !computersSolns.contains(s)&&englishWords.contains(s)){
+            computersSolns.add(s);
+            recordWordForPlayer(s, COMPUTER);
+        }
+        if (englishWords.containsPrefix(s)==true){
+            computersRecursion(englishWords, previousWords, computersSolns, board, blockUsed, s, i-1, j);
+        }
+        blockUsed[i-1][j]=false;
+        s = s.substr(0,s.length()-1);
+    }
+    
+    if (board.inBounds(i-1, j+1) && blockUsed[i-1][j+1]==false){
+        s += board[i-1][j+1];
+        blockUsed[i-1][j+1]=true;
+        if (s.length()>=4 && !previousWords.contains(s)&& !computersSolns.contains(s)&&englishWords.contains(s)){
+            computersSolns.add(s);
+            recordWordForPlayer(s, COMPUTER);
+        }
+        if (englishWords.containsPrefix(s)==true){
+            computersRecursion(englishWords, previousWords, computersSolns, board, blockUsed, s, i-1, j+1);
+        }
+        blockUsed[i-1][j+1]=false;
+        s = s.substr(0,s.length()-1);
+    }
+    
+    if (board.inBounds(i, j-1) && blockUsed[i][j-1]==false){
+        s += board[i][j-1];
+        blockUsed[i][j-1]=true;
+        if (s.length()>=4 && !previousWords.contains(s)&& !computersSolns.contains(s)&&englishWords.contains(s)){
+            computersSolns.add(s);
+            recordWordForPlayer(s, COMPUTER);
+        }
+        if (englishWords.containsPrefix(s)==true){
+            computersRecursion(englishWords, previousWords, computersSolns, board, blockUsed, s, i, j-1);
+        }
+        blockUsed[i][j-1]=false;
+        s = s.substr(0,s.length()-1);
+    }
+    
+    if (board.inBounds(i, j+1) && blockUsed[i][j+1]==false){
+        s += board[i][j+1];
+        blockUsed[i][j+1]=true;
+        if (s.length()>=4 && !previousWords.contains(s)&& !computersSolns.contains(s)&&englishWords.contains(s)){
+            computersSolns.add(s);
+            recordWordForPlayer(s, COMPUTER);
+        }
+        if (englishWords.containsPrefix(s)==true){
+            computersRecursion(englishWords, previousWords, computersSolns, board, blockUsed, s, i, j+1);
+        }
+        blockUsed[i][j+1]=false;
+        s = s.substr(0,s.length()-1);
+    }
+    
+    if (board.inBounds(i+1, j-1) && blockUsed[i+1][j-1]==false){
+        s += board[i+1][j-1];
+        blockUsed[i+1][j-1]=true;
+        if (s.length()>=4 && !previousWords.contains(s)&& !computersSolns.contains(s)&&englishWords.contains(s)){
+            computersSolns.add(s);
+            recordWordForPlayer(s, COMPUTER);
+        }
+        if (englishWords.containsPrefix(s)==true){
+            computersRecursion(englishWords, previousWords, computersSolns, board, blockUsed, s, i+1, j-1);
+        }
+        blockUsed[i+1][j-1]=false;
+        s = s.substr(0,s.length()-1);
+    }
+    
+    if (board.inBounds(i+1, j) && blockUsed[i+1][j]==false){
+        s += board[i+1][j];
+        blockUsed[i+1][j]=true;
+        if (s.length()>=4 && !previousWords.contains(s)&& !computersSolns.contains(s)&&englishWords.contains(s)){
+            computersSolns.add(s);
+            recordWordForPlayer(s, COMPUTER);
+        }
+        if (englishWords.containsPrefix(s)==true){
+            computersRecursion(englishWords, previousWords, computersSolns, board, blockUsed, s, i+1, j);
+        }
+        blockUsed[i+1][j]=false;
+        s = s.substr(0,s.length()-1);
+    }
+    
+    if (board.inBounds(i+1, j+1) && blockUsed[i+1][j+1]==false){
+        s += board[i+1][j+1];
+        blockUsed[i+1][j+1]=true;
+        if (s.length()>=4 && !previousWords.contains(s)&& !computersSolns.contains(s)&&englishWords.contains(s)){
+            computersSolns.add(s);
+            recordWordForPlayer(s, COMPUTER);
+        }
+        if (englishWords.containsPrefix(s)==true){
+            computersRecursion(englishWords, previousWords, computersSolns, board, blockUsed, s, i+1, j+1);
+        }
+        blockUsed[i+1][j+1]=false;
+        s = s.substr(0,s.length()-1);
+    }
+}
